@@ -25,6 +25,9 @@ from .hub import LOG_HEADERS, HubTable, UpdatePlan
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 
+# Rows below the last hub row whose inherited formatting is cleared as well.
+CLEAR_BELOW = 1000
+
 
 def share_id(url: str) -> str:
     """Encode a SharePoint sharing link for the /shares endpoint."""
@@ -223,6 +226,15 @@ class GraphWorkbook:
 
     def format_plan(self, sheet: str, plan: UpdatePlan, log_sheet: str, cfg: Config) -> None:
         """Make the bot's columns look like the rest of the hub (no cell colours)."""
+        # Excel copies the neighbouring column's formatting, including the STATUS
+        # column's conditional formatting, into columns added to the table. Clear all
+        # formats below the headers (conditional ones included) before restyling.
+        cols = sorted(c.column for c in plan.columns)
+        if cols:
+            span = (f"{col_letter(cols[0])}{plan.header_row + 1}:"
+                    f"{col_letter(cols[-1])}{max(plan.last_row, plan.header_row + 1) + CLEAR_BELOW}")
+            self.client.request("POST", f"{self._sheet(sheet)}/range(address='{span}')/clear",
+                                headers=self.headers, json={"applyTo": "Formats"})
         for col in plan.columns:
             letter = col_letter(col.column)
             width, align = style.layout_for(col.header, cfg)

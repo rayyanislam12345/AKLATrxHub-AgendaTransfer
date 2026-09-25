@@ -7,6 +7,7 @@ from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.formatting.formatting import ConditionalFormattingList
 from openpyxl.utils import get_column_letter, range_boundaries
 from openpyxl.worksheet.table import TableColumn
 
@@ -59,8 +60,23 @@ def _style_data(cell, align: str) -> None:
     cell.border = Border(left=grey, right=grey, top=grey, bottom=grey)
 
 
+def _drop_conditional_formats(ws, plan: UpdatePlan) -> None:
+    """Keep other columns' conditional formatting (e.g. STATUS colours) off our columns."""
+    ours = {get_column_letter(c.column) for c in plan.columns}
+    old = ws.conditional_formatting
+    ws.conditional_formatting = ConditionalFormattingList()
+    for cf in old:
+        keep = [str(r) for r in cf.sqref.ranges
+                if not ({get_column_letter(c) for c in range(range_boundaries(str(r))[0],
+                                                             range_boundaries(str(r))[2] + 1)} & ours)]
+        for rng in keep:
+            for rule in cf.rules:
+                ws.conditional_formatting.add(rng, rule)
+
+
 def apply_plan(wb, ws, plan: UpdatePlan, log_sheet: str, cfg: Config | None = None) -> None:
     cfg = cfg or Config()
+    _drop_conditional_formats(ws, plan)
     for col in plan.columns:
         width, align = style.layout_for(col.header, cfg)
         _style_header(ws.cell(row=col.header_row, column=col.column, value=col.header))

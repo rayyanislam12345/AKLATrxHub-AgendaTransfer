@@ -199,6 +199,9 @@ def test_graph_adds_columns_to_table():
     # Formatting: navy/gold header, no fill and grey borders on the data cells.
     sheet = "/wb/worksheets('Transactions%20Hub')"
     assert (("PATCH", f"{sheet}/range(address='I5')/format/fill", {"color": "#002060"})) in calls
+    assert ("POST", f"{sheet}/range(address='I6:J1007')/clear", {"applyTo": "Formats"}) in calls
+    clear_at = calls.index(("POST", f"{sheet}/range(address='I6:J1007')/clear", {"applyTo": "Formats"}))
+    assert clear_at < calls.index(("PATCH", f"{sheet}/range(address='I5')/format/fill", {"color": "#002060"}))
     assert ("POST", f"{sheet}/range(address='I6:I7')/format/fill/clear", None) in calls
     assert ("PATCH", f"{sheet}/range(address='J6:J7')/format/borders/InsideHorizontal",
             {"style": "Continuous", "weight": "Thin", "color": "#BFBFBF"}) in calls
@@ -303,3 +306,22 @@ def test_acronyms_both_ways(agenda, hub):
 ])
 def test_acronyms_do_not_cross_match(agenda, hub):
     assert transaction_score(agenda, hub) < 0.8
+
+
+def test_status_colours_do_not_spread_to_new_columns(tmp_path):
+    from openpyxl.formatting.rule import FormulaRule
+    from openpyxl.styles import PatternFill as PF
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Sr", "Transaction", "Deliverable", "Status"])
+    ws.append([1, "ALPHA", "Term Sheet", "Deliverable With Client"])
+    ws.conditional_formatting.add("D2:D100", FormulaRule(formula=['$D2="Deliverable With Client"'],
+                                                         fill=PF("solid", bgColor="E4DFEC")))
+    # Simulate Excel having copied the rule into the columns the bot owns.
+    ws.conditional_formatting.add("E2:H100", FormulaRule(formula=['$D2="Deliverable With Client"'],
+                                                         fill=PF("solid", bgColor="E4DFEC")))
+    wb.save(tmp_path / "hub.xlsx")
+    update_workbook(tmp_path / "hub.xlsx", tmp_path / "out.xlsx",
+                    lambda t: build_update(t, [], Config()), "", "")
+    ranges = [str(cf.sqref) for cf in openpyxl.load_workbook(tmp_path / "out.xlsx").active.conditional_formatting]
+    assert ranges == ["D2:D100"]
