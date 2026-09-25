@@ -210,3 +210,28 @@ def test_local_table_is_widened(tmp_path):
     assert ws.tables["Hub"].ref == "A2:G3"
     assert ws.auto_filter.ref is None
     assert ws["C3"].value == "Term Sheet"
+
+
+def test_real_hub_layout_client_project_and_initials(tmp_path):
+    table = HubTable(rows=[
+        ["TRANSACTIONS HUB"] + [None] * 7,
+        ["S. NO.", "CLIENT", "PROJECT", "DELIVERABLE", "TEAM", "DELIVERABLE CURRENTLY WITH",
+         "COMMENTS / LATEST UPDATE", "STATUS"],
+        [1, "Zia Sb", "CDA Waste Project", "Risk Allocation Matrix", "t", "Boss", "c", "s"],
+        [2, "Zia Sb", "CDA Waste Project", "Presentation on Risk Allocation Matrix", "t", "Boss", "c", "s"],
+        [3, "Private Infrastructure Development Group", "Supplementary Workstream",
+         "Schedule 4 of the Construction Contract", "t", "Boss", "c", "s"],
+        [4, "Karachi Port Trust", "Chinese USP Proponent Matter", "Memorandum on the USP",
+         "t", "Boss", "c", "s"],
+    ], first_row=4)
+    agenda = parse_agenda(make_agenda(tmp_path / "a.docx", [
+        "Associate: Sam Poe",
+        "Transaction: Zia Sb", "Day Deliverable: Risk Allocation Matrix",
+        "Transaction: PIDG", "Day Deliverable: Schedule 4",
+    ]))
+    plan = build_update(table, [agenda], Config())
+    cols = {c.header: c for c in plan.columns}
+    assert plan.header_row == 5
+    assert [c.column for c in plan.columns] == [9, 10, 11, 12]
+    assert cols["Working On Today"].values == ["Sam Poe", "", "Sam Poe", ""]
+    assert cols["Active Today"].values == ["Yes", "Yes", "Yes", "No"]

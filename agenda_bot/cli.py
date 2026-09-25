@@ -30,6 +30,11 @@ def _report(agendas, plan) -> None:
         print(f"  - {a.employee or '(unknown)'} [{when}] {a.source}: {len(a.items)} item(s)")
         for w in a.warnings:
             print(f"      warning: {w}")
+    print(f"Hub layout: {plan.detected}")
+    print("Matches:")
+    for row in plan.log_rows:
+        print(f"  - {row[1]}: '{row[3]}' / '{row[6]}' -> {row[4] or '-'} / {row[8] or '-'}"
+              f" (rows {row[10] or '-'}) [{row[12]}]")
     print(f"Active transactions today: {', '.join(plan.active_transactions) or 'none'}")
     if plan.unmatched:
         print("Needs attention:")

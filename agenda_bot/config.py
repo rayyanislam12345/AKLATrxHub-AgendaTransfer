@@ -20,6 +20,8 @@ class HubConfig:
         "Deliverable", "Deliverables", "Specific Deliverable", "Deliverable Name",
         "Task", "Tasks", "Document", "Workstream",
     ])
+    # Optional client column; agendas may name the client instead of the project.
+    client_columns: list[str] = field(default_factory=lambda: ["Client", "Client Name"])
     fill_down_transaction: bool = True  # transaction only written on first row of a group
 
 

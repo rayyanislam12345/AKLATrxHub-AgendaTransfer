@@ -6,6 +6,7 @@ worksheet = ""          # tab name; blank = first tab
 header_row = 0          # row number of the column headers; 0 = find it automatically
 # Header names the bot looks for (first match wins). Add the hub's real header if it differs.
 transaction_columns = ["Transaction", "Transaction Name", "Matter", "Project", "Deal"]
+client_columns = ["Client", "Client Name"]   # agendas may name the client instead of the project
 deliverable_columns = ["Deliverable", "Deliverables", "Specific Deliverable", "Task", "Document"]
 fill_down_transaction = true   # transaction name written only on the first row of each group
 

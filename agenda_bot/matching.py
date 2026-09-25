@@ -58,8 +58,16 @@ def transaction_score(agenda_name: str, hub_name: str, aliases: list[str] | None
         # Handle "M6" vs "M-6 ..." once tokens are compacted.
         if c_compact.startswith(a_compact) and len(a_compact) >= 2 and _boundary(cand, a_compact):
             best = max(best, 0.92)
+        # Initials, e.g. "PIDG" for "Private Infrastructure Development Group".
+        if len(a_compact) >= 3 and a_compact == initials(cand):
+            best = max(best, 0.9)
         best = max(best, SequenceMatcher(None, a_norm, c_norm).ratio())
     return best
+
+
+def initials(text: str) -> str:
+    text = re.sub(r"\((private|pvt)\)|\blimited\b|\bltd\b|\bpvt\b", " ", str(text or ""), flags=re.I)
+    return "".join(w[0] for w in norm(text).split() if w not in {"of", "the", "and", "for", "a", "an"})
 
 
 def _contains_run(haystack: list[str], needle: list[str]) -> bool:
@@ -103,5 +111,7 @@ def deliverable_score(agenda_texts: list[str], hub_text: str) -> float:
             # Penalise one-word coincidences between long descriptions.
             if common == 1 and max(len(t_kw), len(hub_kw)) > 3:
                 overlap *= 0.6
-        best = max(best, ratio, overlap)
+        # Keyword overlap alone never beats an exact match, so "Risk Allocation Matrix"
+        # prefers that row over "Presentation on Risk Allocation Matrix".
+        best = max(best, ratio, overlap * (0.9 + 0.09 * ratio))
     return best

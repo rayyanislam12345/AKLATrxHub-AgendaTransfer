@@ -39,6 +39,7 @@ class UpdatePlan:
     log_rows: list[list]
     active_transactions: list[str] = field(default_factory=list)
     unmatched: list[list] = field(default_factory=list)
+    detected: str = ""
 
 
 def _cell(row: list, idx: int):
@@ -115,21 +116,43 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
     def has_content(row: list) -> bool:
         return any(_text(v) for i, v in enumerate(row) if i not in own)
 
-    # Transaction name for every data row (fill down merged / grouped cells).
+    cl_col = _find_column(headers, cfg.hub.client_columns, exact_only=True)
+    if cl_col == tx_col:
+        cl_col = None
+
+    # Transaction (and client) for every data row, filling down grouped cells.
     row_tx: list[str] = []
-    last = ""
+    row_client: list[str] = []
+    last, last_client = "", ""
     for row in data:
         name = _text(_cell(row, tx_col))
+        client = _text(_cell(row, cl_col)) if cl_col is not None else ""
         if name:
-            last = name
+            last, last_client = name, client or last_client
         elif cfg.hub.fill_down_transaction and has_content(row):
-            name = last
+            name, client = last, client or last_client
         row_tx.append(name)
+        row_client.append(client)
 
+    # A transaction is a (client, project) pair; shown as "Client / Project" in the log.
     tx_rows: dict[str, list[int]] = {}
+    tx_parts: dict[str, tuple[str, str]] = {}
     for i, name in enumerate(row_tx):
         if name:
-            tx_rows.setdefault(name, []).append(i)
+            key = f"{row_client[i]} / {name}" if row_client[i] else name
+            row_tx[i] = key
+            tx_rows.setdefault(key, []).append(i)
+            tx_parts[key] = (row_client[i], name)
+
+    def score_tx(agenda_name: str, key: str) -> float:
+        client, project = tx_parts[key]
+        aliases = cfg.aliases_for(key) + cfg.aliases_for(project) + (
+            cfg.aliases_for(client) if client else [])
+        best = transaction_score(agenda_name, project, aliases)
+        if client:
+            best = max(best, transaction_score(agenda_name, client),
+                       transaction_score(agenda_name, f"{client} {project}"))
+        return best
 
     workers: list[list[str]] = [[] for _ in data]
     statuses: list[list[str]] = [[] for _ in data]
@@ -147,9 +170,15 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
 
     for agenda in agendas:
         for item in agenda.items:
-            scored = [(transaction_score(item.transaction, name, cfg.aliases_for(name)), name)
-                      for name in tx_rows]
-            tx_score, tx_name = max(scored, default=(0.0, ""))
+            texts = [item.day_deliverable, item.complete_deliverable, item.scope]
+            scored = sorted(((score_tx(item.transaction, key), key) for key in tx_rows), reverse=True)
+            tx_score, tx_name = scored[0] if scored else (0.0, "")
+            # Several transactions equally close (e.g. a client with more than one
+            # project): let the deliverable decide.
+            tied = [k for sc, k in scored if sc >= tx_score - 0.02]
+            if len(tied) > 1 and dl_col is not None:
+                tx_name = max(tied, key=lambda k: max(
+                    deliverable_score(texts, _text(_cell(data[i], dl_col))) for i in tx_rows[k]))
             log = [agenda.agenda_date.isoformat() if agenda.agenda_date else "", agenda.employee,
                    agenda.source, item.transaction, "", round(tx_score, 2), item.day_deliverable,
                    item.complete_deliverable, "", "", "", item.status, ""]
@@ -166,9 +195,8 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
             target_rows = rows
             note = ""
             if dl_col is not None:
-                texts = [item.day_deliverable, item.complete_deliverable, item.scope]
                 dl_scored = [(deliverable_score(texts, _text(_cell(data[i], dl_col))), i) for i in rows]
-                dl_score, best_row = max(dl_scored, default=(0.0, -1))
+                dl_score, best_row = max(dl_scored, key=lambda t: (t[0], -t[1]), default=(0.0, -1))
                 log[9] = round(dl_score, 2)
                 if dl_score >= cfg.matching.deliverable_threshold:
                     target_rows = [best_row]
@@ -216,5 +244,10 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
         columns.append(ColumnWrite(header=name, column=table.first_col + idx,
                                    header_row=header_row, values=values))
 
+    def label(i):
+        return f"'{_text(_cell(headers, i))}' (col {table.first_col + i})" if i is not None else "none"
+    detected = (f"header row {header_row}; transaction {label(tx_col)}, client {label(cl_col)}, "
+                f"deliverable {label(dl_col)}; writing "
+                + ", ".join(f"'{c.header}' -> col {c.column}" for c in columns))
     return UpdatePlan(header_row=header_row, columns=columns, log_rows=log_rows,
-                      active_transactions=sorted(active_tx), unmatched=unmatched)
+                      active_transactions=sorted(active_tx), unmatched=unmatched, detected=detected)
