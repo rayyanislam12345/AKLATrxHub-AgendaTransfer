@@ -273,3 +273,33 @@ def test_deliverable_volumes_and_single_words():
     assert deliverable_score(["The Finalised Proposal"], "Proposal for legal advisory services") >= 0.5
     exact = deliverable_score(["The USP Memorandum Presentation"], "Presentation on the Memorandum on the USP")
     assert exact > deliverable_score(["The USP Memorandum Presentation"], "Memorandum on the USP")
+
+
+@pytest.mark.parametrize("agenda,hub", [
+    # acronym on the agenda, full name in the hub
+    ("PIDG", "Private Infrastructure Development Group"),
+    ("PIDG – Supplementary Proposal", "Private Infrastructure Development Group"),
+    ("NSCL – Gas Sale Matter", "National Steel Complex Limited"),
+    ("NSC", "National Steel Complex Limited"),
+    ("KPT - USP memo", "Karachi Port Trust"),
+    ("AMPL DD", "Artistic Milliners (Private) Limited"),
+    ("SWPCL", "Sapphire Wind Power Company Limited Acquisition"),
+    # full name on the agenda, acronym in the hub
+    ("Private Infrastructure Development Group – Supplementary", "PIDG"),
+    ("National Steel Complex – Gas Sale", "NSCL"),
+    ("Karachi Port Trust", "KPT - Chinese USP Proponent Matter"),
+    ("Faisalabad Sargodha Chiniot Road", "Road Project (FSC)"),
+])
+def test_acronyms_both_ways(agenda, hub):
+    assert transaction_score(agenda, hub) >= 0.8
+
+
+@pytest.mark.parametrize("agenda,hub", [
+    ("PIDG", "National Steel Complex Limited"),
+    ("CDA", "Karachi Port Trust"),
+    ("KPT", "Private Infrastructure Development Group"),
+    ("Karachi Port Trust", "NSCL"),
+    ("SKIM", "Zia Sb CDA Waste Project"),
+])
+def test_acronyms_do_not_cross_match(agenda, hub):
+    assert transaction_score(agenda, hub) < 0.8

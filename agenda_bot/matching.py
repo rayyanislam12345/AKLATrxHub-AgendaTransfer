@@ -72,20 +72,64 @@ def transaction_score(agenda_name: str, hub_name: str, aliases: list[str] | None
         # Handle "M6" vs "M-6 ..." once tokens are compacted.
         if c_compact.startswith(a_compact) and len(a_compact) >= 2 and _boundary(cand, a_compact):
             best = max(best, 0.92)
-        # Initials, e.g. "PIDG" for "Private Infrastructure Development Group".
-        if len(a_compact) >= 3 and a_compact in initials(cand):
+        # Acronyms either way round: "PIDG" on the agenda for "Private Infrastructure
+        # Development Group" in the hub, or "NSCL" in the hub for the full name.
+        if acronym_match(agenda_name, cand):
             best = max(best, 0.9)
         best = max(best, SequenceMatcher(None, a_norm, c_norm).ratio(),
                    _distinctive_word_score(agenda_name, cand))
     return best
 
 
+_ACRONYM_SKIP = {"of", "the", "and", "for", "a", "an", "&"}
+_CORPORATE = {"limited", "ltd", "pvt", "private", "company", "co", "plc", "inc"}
+
+
+def acronyms(text: str) -> set[str]:
+    """Acronyms written in a name: all-caps words of 3+ characters ("PIDG", "NSCL",
+    "(FSC)"), or the whole name when it is one short word ("Pidg")."""
+    raw = str(text or "")
+    found = {m.lower() for m in re.findall(r"\b[A-Z][A-Z0-9&]{2,}\b", raw)}
+    found = {f.replace("&", "") for f in found}
+    whole = compact(raw)
+    if whole.isalpha() and 3 <= len(whole) <= 5 and len(norm(raw).split()) == 1:
+        found.add(whole)
+    return found
+
+
+def _segments(text: str) -> list[list[str]]:
+    """Word lists an acronym could stand for: the whole name (with and without any
+    bracketed part) and each piece between dashes, slashes or brackets."""
+    raw = str(text or "")
+    pieces = [raw, re.sub(r"\([^)]*\)", " ", raw)]
+    pieces += re.split(r"\s[-–—]\s|[–—|/,()]", raw)
+    out = []
+    for piece in pieces:
+        words = [w for w in norm(piece).split() if w not in _ACRONYM_SKIP]
+        if words:
+            out.append(words)
+    return out
+
+
 def initials(text: str) -> set[str]:
-    """Possible initials: NSCL and NSC for "National Steel Complex Limited"."""
-    words = [w for w in norm(re.sub(r"\((private|pvt)\)", " ", str(text or ""), flags=re.I)).split()
-             if w not in {"of", "the", "and", "for", "a", "an"}]
-    core = [w for w in words if w not in {"limited", "ltd", "pvt", "private"}]
-    return {"".join(w[0] for w in ws) for ws in (words, core) if len(ws) >= 2}
+    """Initials a name could be abbreviated to. For "National Steel Complex Limited":
+    NSCL, NSC (without the corporate suffix) and NS, N (leading words), so "NSC"
+    and "NSCL" both work."""
+    variants: set[str] = set()
+    for words in _segments(text):
+        core = [w for w in words if w not in _CORPORATE]
+        for ws in (words, core):
+            letters = "".join(w[0] for w in ws)
+            # Every leading run of words ("Sapphire Wind Power" -> SWP).
+            variants.update(letters[:n] for n in range(2, len(letters) + 1))
+    # "NSCL" / "AMPL" for a name the hub writes without Limited / Private Limited.
+    variants |= {v + "l" for v in variants} | {v + "pl" for v in variants}
+    return variants
+
+
+def acronym_match(a: str, b: str) -> bool:
+    """True when one name contains an acronym of the other."""
+    return bool(acronyms(a) & initials(b)) or bool(acronyms(b) & initials(a))
 
 
 def _distinctive_word_score(agenda_name: str, hub_name: str) -> float:
@@ -98,10 +142,9 @@ def _distinctive_word_score(agenda_name: str, hub_name: str) -> float:
     agenda_words = {w for w in agenda_words if len(w) > 1}
     if not agenda_words:
         return 0.0
-    hub_initials = initials(hub_name)
-    if agenda_words & hub_initials:          # "NSCL - Gas Sale Matter"
+    if acronym_match(agenda_name, hub_name):   # "NSCL - Gas Sale Matter"
         return 0.9
-    hub_words = {_stem(w) for w in norm(hub_name).split()} | hub_initials
+    hub_words = {_stem(w) for w in norm(hub_name).split()}
     found = len(agenda_words & hub_words)
     if not found:
         return 0.0
