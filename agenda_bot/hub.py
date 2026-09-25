@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -9,6 +10,8 @@ from .agenda_parser import Agenda
 from .config import Config
 from .matching import deliverable_score, norm, transaction_score
 from .style import date_text
+
+_PLACEHOLDER = re.compile(r"^Column\d+$", re.I)
 
 LOG_HEADERS = [
     "Agenda Date", "Employee", "Agenda File", "Agenda Transaction", "Matched Transaction",
@@ -230,20 +233,30 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
     if out.date_column:
         wanted.append((out.date_column, dated))
 
-    # Reuse existing output columns; otherwise append after the last column that holds
-    # anything, in any row, so existing data can never be overwritten.
-    width = max((len(r) for r in table.rows), default=0)
-    last_used = max((i for r in table.rows[hdr_idx:] for i, v in enumerate(r) if _text(v)),
-                    default=-1)
-    next_free = max(last_used, len(headers) - 1, width - 1) + 1
+    # Reuse existing output columns. Otherwise use the empty columns at the end of the
+    # hub (blank, or Excel's "Column1" placeholder left when someone clears a table
+    # column), then new columns after them. Columns holding anything are never used.
+    width = max((len(r) for r in table.rows[hdr_idx:]), default=0)
+
+    def is_free(i: int) -> bool:
+        header = _text(_cell(headers, i))
+        return ((not header or _PLACEHOLDER.match(header) is not None)
+                and not any(_text(_cell(r, i)) for r in data))
+
+    last_real = max((i for i in range(width) if not is_free(i)), default=-1)
+    free = [i for i in range(last_real + 1, width)]
+    next_free = width
     columns = []
     for name, values in wanted:
         idx = next((i for i, h in enumerate(headers) if norm(_text(h)) == norm(name)), None)
         if idx is None:
-            idx = next_free
-            next_free += 1
+            if free:
+                idx = free.pop(0)
+            else:
+                idx = next_free
+                next_free += 1
         occupied = [r for r in data if _text(_cell(r, idx))]
-        if idx not in own and (_text(_cell(headers, idx)) or occupied):
+        if idx not in own and (occupied or not is_free(idx)):
             raise ValueError(f"refusing to write '{name}' into column {idx + 1}: it already has data")
         columns.append(ColumnWrite(header=name, column=table.first_col + idx,
                                    header_row=header_row, values=values))

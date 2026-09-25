@@ -325,3 +325,22 @@ def test_status_colours_do_not_spread_to_new_columns(tmp_path):
                     lambda t: build_update(t, [], Config()), "", "")
     ranges = [str(cf.sqref) for cf in openpyxl.load_workbook(tmp_path / "out.xlsx").active.conditional_formatting]
     assert ranges == ["D2:D100"]
+
+
+def test_reuses_cleared_table_columns():
+    # Someone cleared the bot's columns; Excel renamed the empty headers Column1..4.
+    table = HubTable(rows=[
+        ["Sr", "Transaction", "Deliverable", "Column1", "Column2", "Column3", "Column4"],
+        [1, "ALPHA", "Term Sheet", None, None, None, None],
+    ])
+    plan = build_update(table, [], Config())
+    assert [c.column for c in plan.columns] == [4, 5, 6, 7]
+
+
+def test_placeholder_header_with_data_is_left_alone():
+    table = HubTable(rows=[
+        ["Sr", "Transaction", "Deliverable", "Column1"],
+        [1, "ALPHA", "Term Sheet", "someone's note"],
+    ])
+    plan = build_update(table, [], Config())
+    assert min(c.column for c in plan.columns) == 5
