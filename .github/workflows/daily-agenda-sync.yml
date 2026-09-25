@@ -1,10 +1,11 @@
 name: Daily agenda -> Transaction Hub
 
 on:
-  schedule:
-    # 11:00 and 15:00 Pakistan time (UTC+5), Monday to Friday
-    - cron: "0 6 * * 1-5"
-    - cron: "0 10 * * 1-5"
+  # Schedule disabled: the first run wrote into the wrong columns of the live hub.
+  # Re-enable only after the fix has been tested on a copy.
+  # schedule:
+  #   - cron: "0 6 * * 1-5"
+  #   - cron: "0 10 * * 1-5"
   workflow_dispatch:
     inputs:
       date:
