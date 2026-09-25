@@ -102,7 +102,7 @@ def test_build_update(tmp_path):
     assert working[3] == ""
     assert cols["Deliverable Status (Today)"].values[2] == "Jane Doe: Pending with me; Sam Poe: In progress"
     assert cols["Active Today"].values == ["Yes", "Yes", "Yes", "Yes", "No", None]
-    assert cols["Agenda Date"].values[0] == "2026-09-02"
+    assert cols["Agenda Date"].values[0] == "September 02, 2026"
     assert any(r[3] == "OMEGA" for r in plan.unmatched)
 
 
@@ -184,15 +184,22 @@ def test_graph_adds_columns_to_table():
 
     wb = GraphWorkbook.__new__(GraphWorkbook)
     wb.client, wb.base, wb.headers = FakeClient(), "/wb", {}
-    plan = UpdatePlan(header_row=5, log_rows=[], columns=[
+    plan = UpdatePlan(header_row=5, log_rows=[], last_row=7, columns=[
         ColumnWrite("Working On Today", 9, 5, ["A", None]),
         ColumnWrite("Active Today", 10, 5, ["Yes", "No"]),
     ])
     wb.apply_plan("Transactions Hub", plan, "")
-    assert [c[0] for c in calls] == ["POST", "POST"]
+    adds = [c for c in calls if c[1].endswith("/columns/add")]
+    assert len(adds) == 2
     assert calls[0][1] == "/wb/tables('TransactionsHub')/columns/add"
     assert calls[0][2]["values"] == [["Working On Today"], ["A"], [""]]
     assert calls[1][2]["values"] == [["Active Today"], ["Yes"], ["No"]]
+    # Formatting: navy/gold header, no fill and grey borders on the data cells.
+    sheet = "/wb/worksheets('Transactions%20Hub')"
+    assert (("PATCH", f"{sheet}/range(address='I5')/format/fill", {"color": "#002060"})) in calls
+    assert ("POST", f"{sheet}/range(address='I6:I7')/format/fill/clear", None) in calls
+    assert ("PATCH", f"{sheet}/range(address='J6:J7')/format/borders/InsideHorizontal",
+            {"style": "Continuous", "weight": "Thin", "color": "#BFBFBF"}) in calls
 
 
 def test_local_table_is_widened(tmp_path):
@@ -210,6 +217,8 @@ def test_local_table_is_widened(tmp_path):
     assert ws.tables["Hub"].ref == "A2:G3"
     assert ws.auto_filter.ref is None
     assert ws["C3"].value == "Term Sheet"
+    assert ws["D2"].fill.fgColor.rgb == "FF002060" and ws["D2"].font.color.rgb == "FFFFC000"
+    assert ws["D3"].fill.fill_type is None and ws["D3"].border.bottom.color.rgb == "FFBFBFBF"
 
 
 def test_real_hub_layout_client_project_and_initials(tmp_path):

@@ -58,7 +58,7 @@ def run_local(args, cfg: Config) -> int:
     _check_dates(agendas, on_date)
     plan = update_workbook(args.hub, args.out or args.hub,
                            partial(build_update, agendas=agendas, cfg=cfg, run_date=on_date),
-                           cfg.hub.worksheet, cfg.output.log_sheet)
+                           cfg.hub.worksheet, cfg.output.log_sheet, cfg)
     _report(agendas, plan)
     print(f"Saved: {args.out or args.hub}")
     return 0
@@ -83,7 +83,7 @@ def run_sharepoint(args, cfg: Config) -> int:
         if args.dry_run:
             print("Dry run: hub not modified")
         else:
-            workbook.apply_plan(sheet, plan, cfg.output.log_sheet)
+            workbook.apply_plan(sheet, plan, cfg.output.log_sheet, cfg)
     finally:
         workbook.close()
     _report(agendas, plan)

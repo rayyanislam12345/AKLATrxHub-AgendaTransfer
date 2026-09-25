@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from copy import copy
 from datetime import date
 from pathlib import Path
 
 import openpyxl
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter, range_boundaries
 from openpyxl.worksheet.table import TableColumn
 
+from . import style
 from .agenda_parser import Agenda, parse_agenda
+from .config import Config
 from .hub import LOG_HEADERS, HubTable, UpdatePlan
 
 
@@ -37,16 +39,36 @@ def pick_sheet(wb, name: str):
     return wb.worksheets[0]
 
 
-def apply_plan(wb, ws, plan: UpdatePlan, log_sheet: str) -> None:
+def _side(color: str, style_name: str = "thin") -> Side:
+    return Side(style=style_name, color="FF" + color)
+
+
+def _style_header(cell) -> None:
+    cell.font = Font(name=style.FONT, size=style.SIZE, bold=True, color="FF" + style.HEADER_FONT)
+    cell.fill = PatternFill("solid", fgColor="FF" + style.HEADER_FILL)
+    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    cell.border = Border(left=_side(style.HEADER_DIVIDER), right=_side(style.HEADER_DIVIDER),
+                         top=_side(style.HEADER_TOP, "medium"))
+
+
+def _style_data(cell, align: str) -> None:
+    grey = _side(style.DATA_BORDER)
+    cell.font = Font(name=style.FONT, size=style.SIZE)
+    cell.fill = PatternFill(fill_type=None)
+    cell.alignment = Alignment(horizontal=align, vertical="top", wrap_text=True)
+    cell.border = Border(left=grey, right=grey, top=grey, bottom=grey)
+
+
+def apply_plan(wb, ws, plan: UpdatePlan, log_sheet: str, cfg: Config | None = None) -> None:
+    cfg = cfg or Config()
     for col in plan.columns:
-        header_cell = ws.cell(row=col.header_row, column=col.column, value=col.header)
-        # Style new headers like the header cell to their left.
-        if col.column > 1:
-            left = ws.cell(row=col.header_row, column=col.column - 1)
-            if left.has_style and not header_cell.has_style:
-                header_cell._style = copy(left._style)
+        width, align = style.layout_for(col.header, cfg)
+        _style_header(ws.cell(row=col.header_row, column=col.column, value=col.header))
+        ws.column_dimensions[get_column_letter(col.column)].width = width
         for offset, value in enumerate(col.values, start=1):
-            ws.cell(row=col.header_row + offset, column=col.column, value=value)
+            cell = ws.cell(row=col.header_row + offset, column=col.column, value=value)
+            if col.header_row + offset <= plan.last_row:
+                _style_data(cell, align)
 
     if log_sheet:
         if log_sheet in wb.sheetnames:
@@ -55,6 +77,12 @@ def apply_plan(wb, ws, plan: UpdatePlan, log_sheet: str) -> None:
         log.append(LOG_HEADERS)
         for row in plan.log_rows:
             log.append(row)
+        for idx, cell in enumerate(log[1], start=1):
+            _style_header(cell)
+            log.column_dimensions[get_column_letter(idx)].width = style.LOG_WIDTH
+        for row in log.iter_rows(min_row=2):
+            for cell in row:
+                _style_data(cell, "left")
 
 
 def _extend_table_or_filter(ws, plan: UpdatePlan) -> None:
@@ -92,13 +120,13 @@ def _extend_table_or_filter(ws, plan: UpdatePlan) -> None:
 
 
 def update_workbook(hub_path: str | Path, out_path: str | Path, build, sheet_name: str,
-                    log_sheet: str) -> UpdatePlan:
+                    log_sheet: str, cfg: Config | None = None) -> UpdatePlan:
     """`build` is a callable HubTable -> UpdatePlan."""
     keep_vba = str(hub_path).lower().endswith(".xlsm")
     wb = openpyxl.load_workbook(hub_path, keep_vba=keep_vba)
     ws = pick_sheet(wb, sheet_name)
     plan = build(read_table(ws))
-    apply_plan(wb, ws, plan, log_sheet)
+    apply_plan(wb, ws, plan, log_sheet, cfg)
     _extend_table_or_filter(ws, plan)
     wb.save(out_path)
     return plan

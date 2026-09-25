@@ -19,6 +19,8 @@ from urllib.parse import quote
 import requests
 
 from .agenda_parser import Agenda, parse_agenda
+from . import style
+from .config import Config
 from .hub import LOG_HEADERS, HubTable, UpdatePlan
 
 GRAPH = "https://graph.microsoft.com/v1.0"
@@ -163,7 +165,7 @@ class GraphWorkbook:
                 return table["name"], col_number(m.group(1)), col_number(m.group(3)), int(m.group(4))
         return None
 
-    def apply_plan(self, sheet: str, plan: UpdatePlan, log_sheet: str) -> None:
+    def apply_plan(self, sheet: str, plan: UpdatePlan, log_sheet: str, cfg: Config | None = None) -> None:
         table = self._table_at(sheet, plan.header_row)
         for col in sorted(plan.columns, key=lambda c: c.column):
             values = [[col.header]] + [[v] for v in col.values]
@@ -186,3 +188,51 @@ class GraphWorkbook:
                 self.client.request("POST", f"{self.base}/worksheets/add",
                                     headers=self.headers, json={"name": log_sheet})
             self.write(log_sheet, 1, 1, [LOG_HEADERS] + plan.log_rows)
+        self.format_plan(sheet, plan, log_sheet, cfg or Config())
+
+    # ---- formatting -------------------------------------------------------------
+
+    def _fmt(self, sheet: str, address: str, part: str, body: dict) -> None:
+        self.client.request("PATCH", f"{self._sheet(sheet)}/range(address='{address}')/format{part}",
+                            headers=self.headers, json=body)
+
+    def _borders(self, sheet: str, address: str, sides: list[str], color: str,
+                 weight: str = "Thin") -> None:
+        for side in sides:
+            self._fmt(sheet, address, f"/borders/{side}",
+                      {"style": "Continuous", "weight": weight, "color": f"#{color}"})
+
+    def _style_header(self, sheet: str, address: str) -> None:
+        self._fmt(sheet, address, "", {"horizontalAlignment": "Center",
+                                       "verticalAlignment": "Center", "wrapText": True})
+        self._fmt(sheet, address, "/fill", {"color": f"#{style.HEADER_FILL}"})
+        self._fmt(sheet, address, "/font", {"name": style.FONT, "size": style.SIZE, "bold": True,
+                                            "italic": False, "color": f"#{style.HEADER_FONT}"})
+        self._borders(sheet, address, ["EdgeLeft", "EdgeRight", "InsideVertical"], style.HEADER_DIVIDER)
+        self._borders(sheet, address, ["EdgeTop"], style.HEADER_TOP, "Medium")
+
+    def _style_data(self, sheet: str, address: str, align: str) -> None:
+        self.client.request("POST", f"{self._sheet(sheet)}/range(address='{address}')/format/fill/clear",
+                            headers=self.headers)
+        self._fmt(sheet, address, "", {"horizontalAlignment": align.capitalize(),
+                                       "verticalAlignment": "Top", "wrapText": True})
+        self._fmt(sheet, address, "/font", {"name": style.FONT, "size": style.SIZE, "bold": False,
+                                            "italic": False, "color": "#000000"})
+        self._borders(sheet, address, ["EdgeLeft", "EdgeRight", "EdgeTop", "EdgeBottom",
+                                       "InsideVertical", "InsideHorizontal"], style.DATA_BORDER)
+
+    def format_plan(self, sheet: str, plan: UpdatePlan, log_sheet: str, cfg: Config) -> None:
+        """Make the bot's columns look like the rest of the hub (no cell colours)."""
+        for col in plan.columns:
+            letter = col_letter(col.column)
+            width, align = style.layout_for(col.header, cfg)
+            self._style_header(sheet, f"{letter}{plan.header_row}")
+            self._fmt(sheet, f"{letter}{plan.header_row}", "", {"columnWidth": width * 7})
+            if plan.last_row > plan.header_row:
+                self._style_data(sheet, f"{letter}{plan.header_row + 1}:{letter}{plan.last_row}", align)
+        if log_sheet:
+            last = col_letter(len(LOG_HEADERS))
+            self._style_header(log_sheet, f"A1:{last}1")
+            self._fmt(log_sheet, f"A1:{last}1", "", {"columnWidth": style.LOG_WIDTH * 7})
+            if plan.log_rows:
+                self._style_data(log_sheet, f"A2:{last}{len(plan.log_rows) + 1}", "left")

@@ -8,6 +8,7 @@ from datetime import date
 from .agenda_parser import Agenda
 from .config import Config
 from .matching import deliverable_score, norm, transaction_score
+from .style import date_text
 
 LOG_HEADERS = [
     "Agenda Date", "Employee", "Agenda File", "Agenda Transaction", "Matched Transaction",
@@ -40,6 +41,7 @@ class UpdatePlan:
     active_transactions: list[str] = field(default_factory=list)
     unmatched: list[list] = field(default_factory=list)
     detected: str = ""
+    last_row: int = 0          # last hub row with content (for formatting)
 
 
 def _cell(row: list, idx: int):
@@ -179,7 +181,7 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
             if len(tied) > 1 and dl_col is not None:
                 tx_name = max(tied, key=lambda k: max(
                     deliverable_score(texts, _text(_cell(data[i], dl_col))) for i in tx_rows[k]))
-            log = [agenda.agenda_date.isoformat() if agenda.agenda_date else "", agenda.employee,
+            log = [date_text(agenda.agenda_date) if agenda.agenda_date else "", agenda.employee,
                    agenda.source, item.transaction, "", round(tx_score, 2), item.day_deliverable,
                    item.complete_deliverable, "", "", "", item.status, ""]
             if tx_score < cfg.matching.transaction_threshold:
@@ -212,7 +214,7 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
             log_rows.append(log)
 
     dates = sorted({a.agenda_date for a in agendas if a.agenda_date})
-    date_label = (run_date or (dates[-1] if dates else date.today())).isoformat()
+    date_label = date_text(run_date or (dates[-1] if dates else date.today()))
 
     blank = [not has_content(row) for row in data]
     working = [None if blank[i] else "; ".join(workers[i]) for i in range(len(data))]
@@ -250,5 +252,8 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
     detected = (f"header row {header_row}; transaction {label(tx_col)}, client {label(cl_col)}, "
                 f"deliverable {label(dl_col)}; writing "
                 + ", ".join(f"'{c.header}' -> col {c.column}" for c in columns))
+    content = [i for i in range(len(data)) if not blank[i]]
+    last_row = header_row + 1 + content[-1] if content else header_row
     return UpdatePlan(header_row=header_row, columns=columns, log_rows=log_rows,
-                      active_transactions=sorted(active_tx), unmatched=unmatched, detected=detected)
+                      active_transactions=sorted(active_tx), unmatched=unmatched,
+                      detected=detected, last_row=last_row)
