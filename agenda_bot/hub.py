@@ -49,12 +49,14 @@ def _text(value) -> str:
     return "" if value is None else str(value).strip()
 
 
-def _find_column(headers: list, candidates: list[str]) -> int | None:
+def _find_column(headers: list, candidates: list[str], exact_only: bool = False) -> int | None:
     wanted = [norm(c) for c in candidates]
     normed = [norm(_text(h)) for h in headers]
     for cand in wanted:                       # exact match, in preference order
         if cand in normed:
             return normed.index(cand)
+    if exact_only:
+        return None
     for cand in wanted:                       # header that starts with a candidate
         for idx, header in enumerate(normed):
             if header and header.startswith(cand):
@@ -63,22 +65,38 @@ def _find_column(headers: list, candidates: list[str]) -> int | None:
 
 
 def locate_header(table: HubTable, cfg: Config) -> tuple[int, int, int | None]:
-    """Return (row index in table, transaction col index, deliverable col index or None)."""
+    """Return (row index in table, transaction col index, deliverable col index or None).
+
+    A header row must have at least three filled cells, so title rows such as a merged
+    "TRANSACTIONS HUB" banner are never mistaken for it. Rows where both the transaction
+    and deliverable headers match exactly win over looser matches.
+    """
     if cfg.hub.header_row:
         indices = [cfg.hub.header_row - table.first_row]
     else:
         indices = range(min(25, len(table.rows)))
+    best = None
     for idx in indices:
         if idx < 0 or idx >= len(table.rows):
             continue
         headers = table.rows[idx]
-        tx_col = _find_column(headers, cfg.hub.transaction_columns)
-        if tx_col is not None:
-            return idx, tx_col, _find_column(headers, cfg.hub.deliverable_columns)
-    raise ValueError(
-        "could not find the transaction column header; set [hub] header_row and "
-        "transaction_columns in the config to match the sheet"
-    )
+        if sum(1 for h in headers if _text(h)) < 3:
+            continue
+        for rank, exact in ((0, True), (1, False)):
+            tx_col = _find_column(headers, cfg.hub.transaction_columns, exact)
+            if tx_col is None:
+                continue
+            dl_col = _find_column(headers, cfg.hub.deliverable_columns, exact)
+            score = (rank, 0 if dl_col is not None else 1, idx)
+            if best is None or score < best[0]:
+                best = (score, idx, tx_col, dl_col)
+            break
+    if best is None:
+        raise ValueError(
+            "could not find the Transaction column header; set [hub] header_row and "
+            "transaction_columns in the config to match the sheet"
+        )
+    return best[1], best[2], best[3]
 
 
 def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
@@ -180,14 +198,21 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
     if out.date_column:
         wanted.append((out.date_column, dated))
 
-    # Reuse existing output columns; otherwise append after the last used header.
-    last_used = max((i for i, h in enumerate(headers) if _text(h)), default=-1)
+    # Reuse existing output columns; otherwise append after the last column that holds
+    # anything, in any row, so existing data can never be overwritten.
+    width = max((len(r) for r in table.rows), default=0)
+    last_used = max((i for r in table.rows[hdr_idx:] for i, v in enumerate(r) if _text(v)),
+                    default=-1)
+    next_free = max(last_used, len(headers) - 1, width - 1) + 1
     columns = []
     for name, values in wanted:
         idx = next((i for i, h in enumerate(headers) if norm(_text(h)) == norm(name)), None)
         if idx is None:
-            last_used += 1
-            idx = last_used
+            idx = next_free
+            next_free += 1
+        occupied = [r for r in data if _text(_cell(r, idx))]
+        if idx not in own and (_text(_cell(headers, idx)) or occupied):
+            raise ValueError(f"refusing to write '{name}' into column {idx + 1}: it already has data")
         columns.append(ColumnWrite(header=name, column=table.first_col + idx,
                                    header_row=header_row, values=values))
 

@@ -150,9 +150,34 @@ class GraphWorkbook:
         self.client.request("PATCH", f"{self._sheet(sheet)}/range(address='{address}')",
                             headers=self.headers, json={"values": values})
 
+    def _table_at(self, sheet: str, header_row: int) -> tuple[str, int, int, int] | None:
+        """(name, first col, last col, last row) of the Excel Table whose header is header_row."""
+        tables = self.client.get(f"{self._sheet(sheet)}/tables?$select=name", headers=self.headers)
+        for table in tables.get("value", []):
+            name = quote(table["name"], safe="")
+            rng = self.client.get(f"{self.base}/tables('{name}')/range?$select=address",
+                                  headers=self.headers)
+            ref = rng["address"].split("!")[-1].replace("$", "")
+            m = re.match(r"([A-Z]+)(\d+):([A-Z]+)(\d+)", ref)
+            if m and int(m.group(2)) == header_row:
+                return table["name"], col_number(m.group(1)), col_number(m.group(3)), int(m.group(4))
+        return None
+
     def apply_plan(self, sheet: str, plan: UpdatePlan, log_sheet: str) -> None:
-        for col in plan.columns:
-            self.write(sheet, col.column, col.header_row, [[col.header]] + [[v] for v in col.values])
+        table = self._table_at(sheet, plan.header_row)
+        for col in sorted(plan.columns, key=lambda c: c.column):
+            values = [[col.header]] + [[v] for v in col.values]
+            if table and col.column == table[2] + 1:
+                # Add as a new column of the Excel Table so its filter covers it.
+                name, first_col, last_col, last_row = table
+                rows = last_row - plan.header_row + 1
+                values = (values + [[None]] * rows)[:rows]
+                values = [["" if v is None else v for v in r] for r in values]
+                self.client.request("POST", f"{self.base}/tables('{quote(name, safe='')}')/columns/add",
+                                    headers=self.headers, json={"index": None, "values": values})
+                table = (name, first_col, last_col + 1, last_row)
+            else:
+                self.write(sheet, col.column, col.header_row, values)
         if log_sheet:
             if log_sheet in self.sheet_names():
                 self.client.request("POST", f"{self._sheet(log_sheet)}/range(address='A1:Z5000')/clear",

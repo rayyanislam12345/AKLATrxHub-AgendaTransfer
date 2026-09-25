@@ -140,3 +140,73 @@ def test_local_roundtrip(tmp_path):
 def test_graph_helpers():
     assert col_letter(1) == "A" and col_letter(28) == "AB" and col_number("AB") == 28
     assert share_id("https://x.sharepoint.com/a") == "u!aHR0cHM6Ly94LnNoYXJlcG9pbnQuY29tL2E"
+
+
+def test_title_row_not_mistaken_for_header():
+    # Regression: a merged "TRANSACTIONS HUB" banner above the real header row was
+    # taken as the header, so the bot overwrote the Transaction/Deliverable columns.
+    table = HubTable(rows=[
+        [None] * 8,
+        ["For Internal Purposes Only"] + [None] * 7,
+        [None] * 8,
+        ["TRANSACTIONS HUB"] + [None] * 7,
+        ["S. NO.", "TRANSACTION", "DELIVERABLE", "D", "E", "WITH", "COMMENTS", "STATUS"],
+        [1, "ALPHA", "Term Sheet", "d", "e", "Boss", "c", "In progress"],
+    ], first_row=2)
+    plan = build_update(table, [], Config())
+    assert plan.header_row == 6
+    assert [c.column for c in plan.columns] == [9, 10, 11, 12]
+
+
+def test_never_overwrites_existing_data():
+    table = HubTable(rows=[
+        ["Sr", "Transaction", "Deliverable"],
+        [1, "ALPHA", "Term Sheet", None, "stray note"],
+    ])
+    plan = build_update(table, [], Config())
+    assert min(c.column for c in plan.columns) == 6
+
+
+def test_graph_adds_columns_to_table():
+    from agenda_bot.graph_backend import GraphWorkbook
+    from agenda_bot.hub import ColumnWrite, UpdatePlan
+
+    calls = []
+
+    class FakeClient:
+        def get(self, path, **kw):
+            if path.endswith("/tables?$select=name"):
+                return {"value": [{"name": "TransactionsHub"}]}
+            return {"address": "'Transactions Hub'!A5:H7"}
+
+        def request(self, method, path, **kw):
+            calls.append((method, path, kw.get("json")))
+
+    wb = GraphWorkbook.__new__(GraphWorkbook)
+    wb.client, wb.base, wb.headers = FakeClient(), "/wb", {}
+    plan = UpdatePlan(header_row=5, log_rows=[], columns=[
+        ColumnWrite("Working On Today", 9, 5, ["A", None]),
+        ColumnWrite("Active Today", 10, 5, ["Yes", "No"]),
+    ])
+    wb.apply_plan("Transactions Hub", plan, "")
+    assert [c[0] for c in calls] == ["POST", "POST"]
+    assert calls[0][1] == "/wb/tables('TransactionsHub')/columns/add"
+    assert calls[0][2]["values"] == [["Working On Today"], ["A"], [""]]
+    assert calls[1][2]["values"] == [["Active Today"], ["Yes"], ["No"]]
+
+
+def test_local_table_is_widened(tmp_path):
+    from openpyxl.worksheet.table import Table
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["TRANSACTIONS HUB"])
+    ws.append(["Sr", "Transaction", "Deliverable"])
+    ws.append([1, "ALPHA", "Term Sheet"])
+    ws.add_table(Table(displayName="Hub", ref="A2:C3"))
+    wb.save(tmp_path / "hub.xlsx")
+    update_workbook(tmp_path / "hub.xlsx", tmp_path / "out.xlsx",
+                    lambda t: build_update(t, [], Config()), "", "")
+    ws = openpyxl.load_workbook(tmp_path / "out.xlsx").active
+    assert ws.tables["Hub"].ref == "A2:G3"
+    assert ws.auto_filter.ref is None
+    assert ws["C3"].value == "Term Sheet"

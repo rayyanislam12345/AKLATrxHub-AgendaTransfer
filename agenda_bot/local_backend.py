@@ -8,6 +8,7 @@ from pathlib import Path
 
 import openpyxl
 from openpyxl.utils import get_column_letter, range_boundaries
+from openpyxl.worksheet.table import TableColumn
 
 from .agenda_parser import Agenda, parse_agenda
 from .hub import LOG_HEADERS, HubTable, UpdatePlan
@@ -56,11 +57,31 @@ def apply_plan(wb, ws, plan: UpdatePlan, log_sheet: str) -> None:
             log.append(row)
 
 
-def _extend_filter(ws, plan: UpdatePlan) -> None:
-    """Make sure the sheet's filter covers the new columns so 'Active Today' can be filtered."""
+def _extend_table_or_filter(ws, plan: UpdatePlan) -> None:
+    """Make the new columns filterable.
+
+    If the header row belongs to an Excel Table, widen the table to take in the new
+    columns (a second sheet filter overlapping a table corrupts the file). Otherwise
+    widen, or add, the sheet's filter.
+    """
     if not plan.columns:
         return
     last_col = max(c.column for c in plan.columns)
+    for table in ws.tables.values():
+        min_col, min_row, max_col, max_row = range_boundaries(table.ref)
+        if min_row != plan.header_row:
+            continue
+        existing = {c.name for c in table.tableColumns}
+        next_id = max((c.id for c in table.tableColumns), default=0) + 1
+        for col in sorted(plan.columns, key=lambda c: c.column):
+            if col.column > max_col and col.header not in existing:
+                table.tableColumns.append(TableColumn(id=next_id, name=col.header))
+                next_id += 1
+        new_max = max(max_col, last_col)
+        table.ref = f"{get_column_letter(min_col)}{min_row}:{get_column_letter(new_max)}{max_row}"
+        if table.autoFilter is not None:
+            table.autoFilter.ref = table.ref
+        return
     last_row = plan.header_row + len(plan.columns[0].values)
     min_col = 1
     if ws.auto_filter.ref:
@@ -78,6 +99,6 @@ def update_workbook(hub_path: str | Path, out_path: str | Path, build, sheet_nam
     ws = pick_sheet(wb, sheet_name)
     plan = build(read_table(ws))
     apply_plan(wb, ws, plan, log_sheet)
-    _extend_filter(ws, plan)
+    _extend_table_or_filter(ws, plan)
     wb.save(out_path)
     return plan

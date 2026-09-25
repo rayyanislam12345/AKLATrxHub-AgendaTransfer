@@ -14,7 +14,7 @@ on:
       dry_run:
         description: "Match and report only, don't write to the hub"
         type: boolean
-        default: false
+        default: true
 
 jobs:
   sync:
