@@ -1,0 +1,36 @@
+# Copy to config.toml and adjust to match the Transaction Hub sheet.
+# Every setting is optional; the defaults are shown.
+
+[hub]
+worksheet = ""          # tab name; blank = first tab
+header_row = 0          # row number of the column headers; 0 = find it automatically
+# Header names the bot looks for (first match wins). Add the hub's real header if it differs.
+transaction_columns = ["Transaction", "Transaction Name", "Matter", "Project", "Deal"]
+deliverable_columns = ["Deliverable", "Deliverables", "Specific Deliverable", "Task", "Document"]
+fill_down_transaction = true   # transaction name written only on the first row of each group
+
+[output]
+working_column = "Working On Today"
+status_column  = "Deliverable Status (Today)"
+active_column  = "Active Today"
+date_column    = "Agenda Date"   # "" to leave this column out
+active_yes = "Yes"
+active_no  = "No"
+log_sheet  = "Agenda Log"        # "" to skip the audit tab
+
+[matching]
+transaction_threshold = 0.8    # 0-1; raise if wrong transactions get linked
+deliverable_threshold = 0.5    # 0-1; below this the item is marked against the whole transaction
+
+[sharepoint]
+# Sharing links work (Copy link in SharePoint). Can also be set as HUB_URL / AGENDA_FOLDER_URL.
+hub_url = ""            # sharing link to the Transaction Hub workbook
+agenda_folder_url = ""  # sharing link to the folder where agendas are saved
+# tenant_id / client_id / client_secret: set as environment variables, never commit them.
+
+# Short names people write in their agendas, keyed by the transaction name as it
+# appears in the hub. Only needed when the automatic matching misses one
+# (check the "Needs attention" output / Agenda Log tab).
+[aliases]
+# "Hyderabad-Sukkur Motorway (M-6)" = ["M6", "HSM"]
+# "Port Qasim Transaction" = ["PTQ"]

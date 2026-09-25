@@ -1,0 +1,42 @@
+name: Daily agenda -> Transaction Hub
+
+on:
+  schedule:
+    # 11:00 and 15:00 Pakistan time (UTC+5), Monday to Friday
+    - cron: "0 6 * * 1-5"
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Agenda date (YYYY-MM-DD); blank = today"
+        required: false
+      dry_run:
+        description: "Match and report only, don't write to the hub"
+        type: boolean
+        default: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Update hub
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          HUB_URL: ${{ secrets.HUB_URL }}
+          AGENDA_FOLDER_URL: ${{ secrets.AGENDA_FOLDER_URL }}
+          RUN_DATE: ${{ inputs.date }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          CONFIG=""
+          [ -f config.toml ] && CONFIG="--config config.toml"
+          DATE_ARG=""
+          [ -n "$RUN_DATE" ] && DATE_ARG="--date $RUN_DATE"
+          python -m agenda_bot $CONFIG $DATE_ARG sharepoint $DRY_RUN
+

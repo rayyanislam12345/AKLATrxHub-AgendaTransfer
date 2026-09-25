@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+config.local.toml
+# Real agendas / hub copies stay out of git (client-confidential)
+agendas/
+*.xlsx
+*.docx
+!tests/**
