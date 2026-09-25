@@ -22,6 +22,8 @@ class HubConfig:
     ])
     # Optional client column; agendas may name the client instead of the project.
     client_columns: list[str] = field(default_factory=lambda: ["Client", "Client Name"])
+    # The hub's own status column, read for waiting_statuses below.
+    status_columns: list[str] = field(default_factory=lambda: ["Status"])
     fill_down_transaction: bool = True  # transaction only written on first row of a group
 
 
@@ -34,6 +36,11 @@ class OutputConfig:
     active_yes: str = "Yes"
     active_no: str = "No"
     log_sheet: str = "Agenda Log"      # blank string disables the log sheet
+    # Hub statuses meaning the deliverable sits with someone outside the team: those rows
+    # are always Active Today, and Working On Today / Deliverable Status stay blank.
+    waiting_statuses: list[str] = field(default_factory=lambda: [
+        "Deliverable With Boss", "Deliverable With Client",
+    ])
 
 
 @dataclass

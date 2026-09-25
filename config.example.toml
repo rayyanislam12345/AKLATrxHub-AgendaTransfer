@@ -6,7 +6,8 @@ worksheet = ""          # tab name; blank = first tab
 header_row = 0          # row number of the column headers; 0 = find it automatically
 # Header names the bot looks for (first match wins). Add the hub's real header if it differs.
 transaction_columns = ["Transaction", "Transaction Name", "Matter", "Project", "Deal"]
-client_columns = ["Client", "Client Name"]   # agendas may name the client instead of the project
+client_columns = ["Client", "Client Name"]
+status_columns = ["Status"]    # the hub's own status column   # agendas may name the client instead of the project
 deliverable_columns = ["Deliverable", "Deliverables", "Specific Deliverable", "Task", "Document"]
 fill_down_transaction = true   # transaction name written only on the first row of each group
 
@@ -18,6 +19,9 @@ date_column    = "Agenda Date"   # "" to leave this column out
 active_yes = "Yes"
 active_no  = "No"
 log_sheet  = "Agenda Log"        # "" to skip the audit tab
+# Hub STATUS values meaning the deliverable is with someone outside the team: those rows
+# are always Active Today, and Working On Today / Deliverable Status (Today) stay blank.
+waiting_statuses = ["Deliverable With Boss", "Deliverable With Client"]
 
 [matching]
 transaction_threshold = 0.8    # 0-1; raise if wrong transactions get linked

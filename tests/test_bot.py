@@ -344,3 +344,28 @@ def test_placeholder_header_with_data_is_left_alone():
     ])
     plan = build_update(table, [], Config())
     assert min(c.column for c in plan.columns) == 5
+
+
+def test_rows_with_boss_or_client_are_blank_but_active(tmp_path):
+    table = HubTable(rows=[
+        ["S. NO.", "CLIENT", "PROJECT", "DELIVERABLE", "STATUS"],
+        [1, "Zia Sb", "CDA Waste Project", "Risk Allocation Matrix", "Deliverable With Boss"],
+        [2, "Zia Sb", "CDA Waste Project", "Proposal", "Deliverable with client"],
+        [3, "Zia Sb", "CDA Waste Project", "Markup", "Deliverable In Progress"],
+        [4, "KPT", "USP Matter", "Memo", "Deliverable With Client"],
+        [5, "KPT", "USP Matter", "Deck", "Deliverable With Client And AKLA"],
+        [6, "KPT", "USP Matter", "Note", "Deliverable Not Started"],
+    ])
+    agenda = parse_agenda(make_agenda(tmp_path / "a.docx", [
+        "Associate: Sam Poe",
+        "Transaction: CDA Waste Project", "Day Deliverable: Risk Allocation Matrix",
+        "Current Deliverable Status: Pending with Boss",
+        "Transaction: CDA Waste Project", "Day Deliverable: Markup",
+        "Transaction: USP Matter", "Day Deliverable: Deck",
+    ]))
+    plan = build_update(table, [agenda], Config())
+    cols = {c.header: c.values for c in plan.columns}
+    assert cols["Working On Today"] == ["", "", "Sam Poe", "", "Sam Poe", ""]
+    assert cols["Deliverable Status (Today)"][0] == ""
+    assert cols["Active Today"] == ["Yes", "Yes", "Yes", "Yes", "Yes", "No"]
+    assert "left blank, kept Active" in plan.log_rows[0][12]

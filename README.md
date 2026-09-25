@@ -7,7 +7,7 @@ specific deliverable on the **Transaction Hub** sheet, and fills four columns:
 |---|---|
 | **Working On Today** | Who has that deliverable on today's agenda, e.g. `Areen Ali Shah; Sara Khan` |
 | **Deliverable Status (Today)** | Each person's "Current Deliverable Status", e.g. `Areen Ali Shah: Pending with me` |
-| **Active Today** | `Yes` only on rows where someone is named in Working On Today, otherwise `No`. Filter on this to hide idle work |
+| **Active Today** | `Yes` on rows where someone is named in Working On Today, and on rows whose STATUS is "Deliverable With Boss" or "Deliverable With Client" (those rows keep Working On Today and Deliverable Status blank). Otherwise `No`. Filter on this to hide idle work |
 | **Agenda Date** | The agenda date these values come from |
 
 It also writes an **Agenda Log** tab listing every agenda item, where it was linked,

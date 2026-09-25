@@ -122,6 +122,10 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
         return any(_text(v) for i, v in enumerate(row) if i not in own)
 
     cl_col = _find_column(headers, cfg.hub.client_columns, exact_only=True)
+    st_col = _find_column(headers, cfg.hub.status_columns, exact_only=True)
+    waiting_values = {norm(v) for v in out.waiting_statuses}
+    waiting = [st_col is not None and norm(_text(_cell(row, st_col))) in waiting_values
+               for row in data]
     if cl_col == tx_col:
         cl_col = None
 
@@ -213,6 +217,11 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
             for i in target_rows:
                 add(i, agenda.employee, item.status)
             log[10] = ", ".join(str(header_row + 1 + i) for i in target_rows)
+            held = [i for i in target_rows if waiting[i]]
+            if held:
+                extra = (f"row(s) {', '.join(str(header_row + 1 + i) for i in held)} are with "
+                         "Boss/Client - left blank, kept Active")
+                note = f"{note}; {extra}" if note else extra
             log[12] = note or "matched"
             log_rows.append(log)
 
@@ -220,11 +229,14 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
     date_label = date_text(run_date or (dates[-1] if dates else date.today()))
 
     blank = [not has_content(row) for row in data]
-    working = [None if blank[i] else "; ".join(workers[i]) for i in range(len(data))]
-    status = [None if blank[i] else "; ".join(statuses[i]) for i in range(len(data))]
-    # "Yes" only on rows someone is actually working on today.
+    # Rows with Boss / the client: no names or statuses, but always active.
+    working = [None if blank[i] else "" if waiting[i] else "; ".join(workers[i])
+               for i in range(len(data))]
+    status = [None if blank[i] else "" if waiting[i] else "; ".join(statuses[i])
+              for i in range(len(data))]
+    # Otherwise "Yes" only on rows someone is actually working on today.
     active = [None if blank[i] or not row_tx[i]
-              else (out.active_yes if workers[i] else out.active_no)
+              else (out.active_yes if workers[i] or waiting[i] else out.active_no)
               for i in range(len(data))]
     dated = [None if blank[i] else date_label for i in range(len(data))]
 
