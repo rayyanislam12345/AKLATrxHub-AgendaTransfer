@@ -10,6 +10,7 @@ STOPWORDS = {
     "re", "draft", "revised", "finalized", "finalised", "final", "finalization",
     "finalisation", "review", "reviewed", "amendments", "amendment", "updated", "update",
     "preparation", "prepare", "prepared", "comments", "circulation", "lenders", "document",
+    "finalise", "finalize", "first", "version", "versions", "complete", "completed",
 }
 
 
@@ -31,8 +32,21 @@ def _stem(word: str) -> str:
     return word
 
 
+SYNONYMS = {"memo": "memorandum", "dd": "diligence", "i": "1", "ii": "2", "iii": "3",
+            "iv": "4", "v": "5", "vol": "volume", "agreements": "agreement"}
+
+# Words too common in transaction names to identify one on their own.
+GENERIC_TX_WORDS = {
+    "due", "diligence", "dd", "project", "matter", "acquisition", "privatisation",
+    "privatization", "proposal", "transaction", "limited", "ltd", "private", "pvt",
+    "company", "co", "advisory", "legal", "services", "report", "workstream", "work",
+    "the", "of", "and", "for", "a", "an", "on", "in", "sb", "sahib", "group",
+}
+
+
 def keywords(text: str) -> set[str]:
-    return {_stem(w) for w in norm(text).split() if w not in STOPWORDS and len(w) > 1}
+    words = (SYNONYMS.get(w, w) for w in norm(text).split())
+    return {_stem(w) for w in words if w not in STOPWORDS and (len(w) > 1 or w.isdigit())}
 
 
 def transaction_score(agenda_name: str, hub_name: str, aliases: list[str] | None = None) -> float:
@@ -59,15 +73,40 @@ def transaction_score(agenda_name: str, hub_name: str, aliases: list[str] | None
         if c_compact.startswith(a_compact) and len(a_compact) >= 2 and _boundary(cand, a_compact):
             best = max(best, 0.92)
         # Initials, e.g. "PIDG" for "Private Infrastructure Development Group".
-        if len(a_compact) >= 3 and a_compact == initials(cand):
+        if len(a_compact) >= 3 and a_compact in initials(cand):
             best = max(best, 0.9)
-        best = max(best, SequenceMatcher(None, a_norm, c_norm).ratio())
+        best = max(best, SequenceMatcher(None, a_norm, c_norm).ratio(),
+                   _distinctive_word_score(agenda_name, cand))
     return best
 
 
-def initials(text: str) -> str:
-    text = re.sub(r"\((private|pvt)\)|\blimited\b|\bltd\b|\bpvt\b", " ", str(text or ""), flags=re.I)
-    return "".join(w[0] for w in norm(text).split() if w not in {"of", "the", "and", "for", "a", "an"})
+def initials(text: str) -> set[str]:
+    """Possible initials: NSCL and NSC for "National Steel Complex Limited"."""
+    words = [w for w in norm(re.sub(r"\((private|pvt)\)", " ", str(text or ""), flags=re.I)).split()
+             if w not in {"of", "the", "and", "for", "a", "an"}]
+    core = [w for w in words if w not in {"limited", "ltd", "pvt", "private"}]
+    return {"".join(w[0] for w in ws) for ws in (words, core) if len(ws) >= 2}
+
+
+def _distinctive_word_score(agenda_name: str, hub_name: str) -> float:
+    """Agendas often write 'Riali – Due Diligence' or 'Artistic-DISCOS Privatisation'.
+
+    Score by how many of the agenda's distinctive words (not generic ones such as
+    'Due Diligence' or 'Project') appear in the hub name or its initials.
+    """
+    agenda_words = {_stem(w) for w in norm(agenda_name).split()} - GENERIC_TX_WORDS
+    agenda_words = {w for w in agenda_words if len(w) > 1}
+    if not agenda_words:
+        return 0.0
+    hub_initials = initials(hub_name)
+    if agenda_words & hub_initials:          # "NSCL - Gas Sale Matter"
+        return 0.9
+    hub_words = {_stem(w) for w in norm(hub_name).split()} | hub_initials
+    found = len(agenda_words & hub_words)
+    if not found:
+        return 0.0
+    share = found / len(agenda_words)
+    return 0.8 + 0.15 * share if share >= 0.5 else 0.0
 
 
 def _contains_run(haystack: list[str], needle: list[str]) -> bool:
@@ -90,7 +129,12 @@ def _boundary(hub_name: str, code: str) -> bool:
 
 
 def deliverable_score(agenda_texts: list[str], hub_text: str) -> float:
-    """Best similarity between any agenda description and a hub deliverable cell."""
+    """Best similarity between any agenda description and a hub deliverable cell.
+
+    Based on shared keywords (cosine of the two keyword sets), so "Presentation on the
+    USP memorandum" prefers "Presentation on the Memorandum on the USP" over
+    "Memorandum on the USP". Plain string similarity only counts when it is high.
+    """
     hub_kw = keywords(hub_text)
     hub_norm = norm(hub_text)
     if not hub_norm:
@@ -102,16 +146,15 @@ def deliverable_score(agenda_texts: list[str], hub_text: str) -> float:
             continue
         if t_norm == hub_norm:
             return 1.0
-        ratio = SequenceMatcher(None, t_norm, hub_norm).ratio()
         t_kw = keywords(text)
-        overlap = 0.0
         if t_kw and hub_kw:
+            if t_kw == hub_kw:
+                best = max(best, 0.99)
             common = len(t_kw & hub_kw)
-            overlap = common / min(len(t_kw), len(hub_kw))
-            # Penalise one-word coincidences between long descriptions.
-            if common == 1 and max(len(t_kw), len(hub_kw)) > 3:
-                overlap *= 0.6
-        # Keyword overlap alone never beats an exact match, so "Risk Allocation Matrix"
-        # prefers that row over "Presentation on Risk Allocation Matrix".
-        best = max(best, ratio, overlap * (0.9 + 0.09 * ratio))
+            best = max(best, 0.98 * common / (len(t_kw) * len(hub_kw)) ** 0.5)
+            if t_kw <= hub_kw:                   # "The Proposal" -> "Proposal for ..."
+                best = max(best, 0.6)
+        ratio = SequenceMatcher(None, t_norm, hub_norm).ratio()
+        if ratio >= 0.8:
+            best = max(best, ratio * 0.98)
     return best

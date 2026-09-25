@@ -62,7 +62,7 @@ def test_parse_value_on_next_line_and_tables(tmp_path):
     ("M6", "M-6 Motorway (Hyderabad-Sukkur)", True),
     ("M6", "M60 Project", False),
     ("PTQ", "PTQ - Port Qasim", True),
-    ("Karachi BRT", "BRT Karachi", False),
+    ("Karachi BRT", "BRT Karachi", True),
 ])
 def test_transaction_score(agenda, hub, ok):
     assert (transaction_score(agenda, hub) >= 0.8) is ok
@@ -235,3 +235,30 @@ def test_real_hub_layout_client_project_and_initials(tmp_path):
     assert [c.column for c in plan.columns] == [9, 10, 11, 12]
     assert cols["Working On Today"].values == ["Sam Poe", "", "Sam Poe", ""]
     assert cols["Active Today"].values == ["Yes", "Yes", "Yes", "No"]
+
+
+@pytest.mark.parametrize("agenda,hub", [
+    ("Riali – Due Diligence", "Zia Barry Riali Hydro Power Acquisition"),
+    ("Artistic-DISCOS Privatisation", "Artistic Milliners (Private) Limited DISCOS Acquisition"),
+    ("NSCL – Gas Sale Matter", "National Steel Complex Limited"),
+    ("PIDG – Supplementary Proposal", "Private Infrastructure Development Group"),
+])
+def test_agenda_style_transaction_names(agenda, hub):
+    assert transaction_score(agenda, hub) >= 0.8
+
+
+@pytest.mark.parametrize("agenda", ["M6", "Project Carbon", "SKIM", "PTQ"])
+def test_unknown_transactions_stay_unmatched(agenda):
+    for hub in ["Zia Sb CDA Waste Project", "National Steel Complex Limited Steel Mill Revival",
+                "Karachi Port Trust Chinese USP Proponent Matter"]:
+        assert transaction_score(agenda, hub) < 0.8
+
+
+def test_deliverable_volumes_and_single_words():
+    from agenda_bot.matching import deliverable_score
+    v1 = deliverable_score(["Finalise first draft of volume 1 and 3"], "Due Diligence Report - Volume I")
+    v3 = deliverable_score(["Finalise first draft of volume 1 and 3"], "Due Diligence Report - Volume III")
+    assert v1 >= 0.5 and abs(v1 - v3) < 0.03
+    assert deliverable_score(["The Finalised Proposal"], "Proposal for legal advisory services") >= 0.5
+    exact = deliverable_score(["The USP Memorandum Presentation"], "Presentation on the Memorandum on the USP")
+    assert exact > deliverable_score(["The USP Memorandum Presentation"], "Memorandum on the USP")

@@ -60,6 +60,10 @@ NAME_LABELS = (
     "lawyer", "name", "employee", "prepared by",
 )
 
+# Any label ending in one of these ("Trainee Associate", "Associate Lawyer") is a name line.
+NAME_ROLE_WORDS = {"counsel", "associate", "partner", "trainee", "intern", "lawyer",
+                   "paralegal", "advocate", "name", "employee", "consultant", "officer"}
+
 # Section headings that end the agenda part of the document.
 STOP_HEADINGS = ("daily timesheet", "timesheet")
 
@@ -68,7 +72,7 @@ NON_TRANSACTIONS = {"internal", "admin", "administrative", "n/a", "na", "none", 
 
 _LABEL_RE = re.compile(r"^\s*([A-Za-z][A-Za-z’' &/.-]{0,40}?)\s*:\s*(.*)$", re.S)
 _FILENAME_RE = re.compile(
-    r"daily[\s_-]*agenda[\s_-]*-?[\s_-]*(?P<name>.+?)[\s_-]+(?P<date>[A-Za-z]+[\s_-]+\d{1,2}[\s_,-]+\d{4})",
+    r"daily[\s_-]*agenda[\s_-]*-?[\s_-]*(?P<name>.+?)[\s_\-\[(]+(?P<date>[A-Za-z]+[\s_-]+\d{1,2}[\s_,-]+\d{4})",
     re.I,
 )
 
@@ -181,7 +185,8 @@ def parse_agenda(source: str | Path | BinaryIO | bytes, filename: str | None = N
                 agenda_date = parse_date(value)
             pending_field = None
             continue
-        if match and label in NAME_LABELS and not employee:
+        if match and not employee and label not in ITEM_LABELS and (
+                label in NAME_LABELS or label.split()[-1:] and label.split()[-1] in NAME_ROLE_WORDS):
             employee = value
             pending_field = None
             continue

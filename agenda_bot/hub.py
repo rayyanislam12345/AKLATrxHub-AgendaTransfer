@@ -196,11 +196,12 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
             note = ""
             if dl_col is not None:
                 dl_scored = [(deliverable_score(texts, _text(_cell(data[i], dl_col))), i) for i in rows]
-                dl_score, best_row = max(dl_scored, key=lambda t: (t[0], -t[1]), default=(0.0, -1))
+                dl_score = max((sc for sc, _ in dl_scored), default=0.0)
                 log[9] = round(dl_score, 2)
                 if dl_score >= cfg.matching.deliverable_threshold:
-                    target_rows = [best_row]
-                    log[8] = _text(_cell(data[best_row], dl_col))
+                    # Equally good rows (e.g. "volume 1 and 3") are all marked.
+                    target_rows = [i for sc, i in dl_scored if sc >= dl_score - 0.03]
+                    log[8] = "; ".join(_text(_cell(data[i], dl_col)) for i in target_rows)
                 else:
                     note = "deliverable not found in hub - marked against every row of the transaction"
                     unmatched.append(log)
