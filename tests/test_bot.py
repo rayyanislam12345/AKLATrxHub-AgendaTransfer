@@ -101,7 +101,7 @@ def test_build_update(tmp_path):
     assert working[2] == "Jane Doe; Sam Poe"
     assert working[3] == ""
     assert cols["Deliverable Status (Today)"].values[2] == "Jane Doe: Pending with me; Sam Poe: In progress"
-    assert cols["Active Today"].values == ["Yes", "Yes", "Yes", "Yes", "No", None]
+    assert cols["Active Today"].values == ["Yes", "Yes", "Yes", "No", "No", None]
     assert cols["Agenda Date"].values[0] == "September 02, 2026"
     assert any(r[3] == "OMEGA" for r in plan.unmatched)
 
@@ -133,6 +133,8 @@ def test_local_roundtrip(tmp_path):
     out = openpyxl.load_workbook(tmp_path / "out.xlsx")
     ws = out.worksheets[0]
     assert ws["F3"].value == "Active Today" and ws["F8"].value == "No"
+    assert ws["F5"].value == "No"          # ALPHA row nobody is working on today
+    assert ws["D5"].value in ("", None)
     assert ws.auto_filter.ref == "A3:G8"
     assert out["Agenda Log"].max_row == 3
 
@@ -243,7 +245,7 @@ def test_real_hub_layout_client_project_and_initials(tmp_path):
     assert plan.header_row == 5
     assert [c.column for c in plan.columns] == [9, 10, 11, 12]
     assert cols["Working On Today"].values == ["Sam Poe", "", "Sam Poe", ""]
-    assert cols["Active Today"].values == ["Yes", "Yes", "Yes", "No"]
+    assert cols["Active Today"].values == ["Yes", "No", "Yes", "No"]
 
 
 @pytest.mark.parametrize("agenda,hub", [

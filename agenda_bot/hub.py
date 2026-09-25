@@ -219,8 +219,9 @@ def build_update(table: HubTable, agendas: list[Agenda], cfg: Config,
     blank = [not has_content(row) for row in data]
     working = [None if blank[i] else "; ".join(workers[i]) for i in range(len(data))]
     status = [None if blank[i] else "; ".join(statuses[i]) for i in range(len(data))]
+    # "Yes" only on rows someone is actually working on today.
     active = [None if blank[i] or not row_tx[i]
-              else (out.active_yes if row_tx[i] in active_tx else out.active_no)
+              else (out.active_yes if workers[i] else out.active_no)
               for i in range(len(data))]
     dated = [None if blank[i] else date_label for i in range(len(data))]
 
